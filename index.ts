@@ -14,32 +14,36 @@ import { getDateRange, formatHours, truncateComment, getDayName, truncateProject
 import { colors as c } from "./lib/colors.js";
 import { VERSION } from "./lib/version.js";
 
+function helpLine(flag: string, desc: string): string {
+  return `    ${c.highlight(flag)} ${c.dim(desc)}`;
+}
+
 function showHelp(): void {
-  console.log(`
-  WH Stats v${VERSION}
+  console.log(c.line(`
+  ${c.info(`WH Stats`)} ${c.dim(`v${VERSION}`)}
 
   Compare booked hours (Redmine) vs clocked hours (timelogger).
 
-  Usage:
-    A) Run "npx whstats" to execute without installing globally.
-    B) Alternatively, install with 'npm install -g whstats' and run 'whstats'.
-       Update with 'npm update -g whstats --latest'.
+  ${c.info("Usage:")}
+    A) Run ${c.highlight(`"npx whstats"`)} to execute without installing globally.
+    B) Alternatively, install with ${c.highlight(`'npm install -g whstats'`)} and run ${c.highlight(`'whstats'`)}.
+       Update with ${c.highlight(`'npm update -g whstats --latest'`)}.
 
-    whstats                 Show time statistics for the last 7 days (default)
-    whstats --week          Show time statistics for the last 7 days (week)
-    whstats --month         Show time statistics for the last 30 days (month)
-    whstats --brief         Show concise output (daily totals only)
-    whstats --no-summary    Show without aggregate summary (-n)
-    whstats --setup         Configure credentials (interactive)
-    whstats --config        Show config file location
-    whstats --reset         Delete saved configuration
-    whstats --help          Show this help message
-    whstats --version       Show version
+${helpLine("whstats                ", "Show time statistics for the last 7 days (default)")}
+${helpLine("whstats --week         ", "Show time statistics for the last 7 days (week)")}
+${helpLine("whstats --month        ", "Show time statistics for the last 30 days (month)")}
+${helpLine("whstats --brief        ", "Show concise output (daily totals only)")}
+${helpLine("whstats --no-summary   ", "Show without aggregate summary (-n)")}
+${helpLine("whstats --setup        ", "Configure credentials (interactive)")}
+${helpLine("whstats --config       ", "Show config file location")}
+${helpLine("whstats --reset        ", "Delete saved configuration")}
+${helpLine("whstats --help         ", "Show this help message")}
+${helpLine("whstats --version      ", "Show version")}
 
-  Configuration:
-    Run 'whstats --setup' to configure your credentials interactively.
-    Credentials are stored in: ~/.config/whstats/config.json
-`);
+  ${c.info("Configuration:")}
+    Run ${c.highlight("'whstats --setup'")} to configure your credentials interactively.
+    Credentials are stored in: ${c.dim("~/.config/whstats/config.json")}
+`));
 }
 
 function showVersion(): void {
