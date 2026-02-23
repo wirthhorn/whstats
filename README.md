@@ -43,6 +43,17 @@ On first run, use `whstats --setup` to configure your credentials interactively.
 
 Configuration is stored in `~/.config/whstats/config.json`.
 
+You can optionally ignore one or more Redmine ticket IDs from booked-hour comparison.
+This is useful for non-working tickets (for example, sick days):
+
+```json
+{
+  "ignoredRedmineTicketIds": [39193]
+}
+```
+
+During `whstats --setup`, existing ignored IDs are prepopulated so you can edit and overwrite the full list.
+
 ## Example Output
 
 ```

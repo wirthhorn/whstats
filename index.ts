@@ -69,6 +69,9 @@ function showConfig(): void {
       console.log(c.line(`    MSSQL User:        ${c.highlight(config.mssqlUser)}`));
       console.log(c.line(`    User ID:           ${c.highlight(config.slackUserId)}`));
       console.log(c.line(`    Target hours/day:  ${c.highlight(`${config.targetHoursPerDay ?? 8}h`)}\n`));
+      const ignored = config.ignoredRedmineTicketIds ?? [];
+      const ignoredLabel = ignored.length > 0 ? ignored.join(", ") : "(none)";
+      console.log(c.line(`    Ignored tickets:   ${c.highlight(ignoredLabel)}\n`));
     }
   }
 }
@@ -118,8 +121,24 @@ function displayResults(
   isCurrentDayClockRunning: boolean,
   brief = false,
   showAggregates = true,
-  targetHoursPerDay = 8
+  targetHoursPerDay = 8,
+  ignoredTicketIds: ReadonlySet<number> = new Set<number>()
 ): void {
+  const isIgnoredEntry = (entry: TimeEntry): boolean => {
+    const issueId = entry.issue?.id;
+    return issueId !== undefined && ignoredTicketIds.has(issueId);
+  };
+
+  const calculateEffectiveBookedHours = (dayEntries: TimeEntry[]): number => {
+    return dayEntries.reduce((sum, entry) => {
+      return isIgnoredEntry(entry) ? sum : sum + entry.hours;
+    }, 0);
+  };
+
+  const calculateRawBookedHours = (dayEntries: TimeEntry[]): number => {
+    return dayEntries.reduce((sum, entry) => sum + entry.hours, 0);
+  };
+
   const grouped = groupByDate(entries);
 
   // Combine all dates from both sources
@@ -131,34 +150,66 @@ function displayResults(
     return;
   }
 
-  // Calculate totals for aggregates
+  interface DayStats {
+    date: string;
+    entries: TimeEntry[];
+    rawBooked: number;
+    effectiveBooked: number;
+    clocked: number;
+    excludedFromTarget: boolean;
+  }
+
+  const dayStats: DayStats[] = sortedDates.map((date) => {
+    const dayEntries = grouped.get(date) || [];
+    const rawBooked = calculateRawBookedHours(dayEntries);
+    const effectiveBooked = calculateEffectiveBookedHours(dayEntries);
+    const clocked = clockedHours.get(date) || 0;
+    const excludedFromTarget = dayEntries.length > 0 && dayEntries.every((entry) => isIgnoredEntry(entry)) && clocked === 0;
+
+    return {
+      date,
+      entries: dayEntries,
+      rawBooked,
+      effectiveBooked,
+      clocked,
+      excludedFromTarget,
+    };
+  });
+
+  // Calculate totals for aggregates (ignored entries excluded)
   let totalBooked = 0;
   let totalClocked = 0;
 
   console.log("");
-  for (const date of sortedDates) {
-    const dayEntries = grouped.get(date) || [];
-    const bookedHours = dayEntries.reduce((sum, e) => sum + e.hours, 0);
-    const clocked = clockedHours.get(date) || 0;
-    const dayName = getDayName(date);
+  for (const stats of dayStats) {
+    const dayName = getDayName(stats.date);
 
-    totalBooked += bookedHours;
-    totalClocked += clocked;
+    totalBooked += stats.effectiveBooked;
+    totalClocked += stats.clocked;
 
-    const clockedStr = clocked > 0 ? formatHours(clocked) : "-";
+    const clockedStr = stats.clocked > 0 ? formatHours(stats.clocked) : "-";
+    const dayLine = `${stats.date} [${dayName}]: ${formatHours(stats.rawBooked)} booked / ${clockedStr} clocked`;
     console.log(
       c.line(
-        `${c.info(date)} ${c.dim(`[${dayName}]`)}: ${c.highlight(formatHours(bookedHours))} booked / ${clocked > 0 ? c.highlight(clockedStr) : clockedStr} clocked`
+        stats.excludedFromTarget
+          ? c.dim(dayLine)
+          : `${c.info(stats.date)} ${c.dim(`[${dayName}]`)}: ${c.highlight(formatHours(stats.rawBooked))} booked / ${stats.clocked > 0 ? c.highlight(clockedStr) : clockedStr} clocked`
       )
     );
 
     if (!brief) {
-      for (const entry of dayEntries) {
+      for (const entry of stats.entries) {
+        const isIgnored = isIgnoredEntry(entry);
         const issueRef = entry.issue ? `#${entry.issue.id}` : "#N/A";
         const project = truncateProject(entry.project?.name || "N/A");
         const hours = formatHours(entry.hours).padStart(5, " ");
         const comment = truncateComment(entry.comments || "(no comment)");
-        console.log(c.line(`    ${c.highlight(hours)} ${c.warning(project)} ${c.danger(issueRef)} ${c.dim(comment)}`));
+        if (isIgnored) {
+          console.log(c.line(c.dim(`    ${hours} ${project} ${issueRef} ${comment}`)));
+        } else {
+          const renderedHours = c.highlight(hours);
+          console.log(c.line(`    ${renderedHours} ${c.warning(project)} ${c.danger(issueRef)} ${c.dim(comment)}`));
+        }
       }
       console.log("");
     }
@@ -166,18 +217,20 @@ function displayResults(
 
   // Display aggregates if enabled
   if (showAggregates) {
-    const workdays = sortedDates.length;
+    const eligibleDayStats = dayStats.filter((stats) => !stats.excludedFromTarget);
+    const workdays = eligibleDayStats.length;
     let targetTotal = 0;
     let hasAdjustedCurrentDayTarget = false;
     let adjustedCurrentDayTarget = 0;
-    const hasCurrentDateInRange = sortedDates.includes(currentDate);
-    const bookedToday = hasCurrentDateInRange ? grouped.get(currentDate)?.reduce((sum, e) => sum + e.hours, 0) ?? 0 : 0;
+    const currentDayStats = dayStats.find((stats) => stats.date === currentDate);
+    const hasCurrentDateInRange = currentDayStats !== undefined;
+    const bookedToday = currentDayStats?.effectiveBooked ?? 0;
     const bookedPastDays = totalBooked - bookedToday;
 
-    for (const date of sortedDates) {
+    for (const stats of eligibleDayStats) {
       let dayTarget = targetHoursPerDay;
-      if (isCurrentDayClockRunning && date === currentDate) {
-        const clockedToday = clockedHours.get(date) || 0;
+      if (isCurrentDayClockRunning && stats.date === currentDate) {
+        const clockedToday = stats.clocked;
         dayTarget = Math.min(clockedToday, targetHoursPerDay);
         hasAdjustedCurrentDayTarget = dayTarget !== targetHoursPerDay;
         adjustedCurrentDayTarget = dayTarget;
@@ -199,7 +252,7 @@ function displayResults(
     const clockedSign = clockedDiscrepancy > 0 ? "+" : "";
 
     if (hasAdjustedCurrentDayTarget) {
-      const clockedToday = hasCurrentDateInRange ? clockedHours.get(currentDate) || 0 : 0;
+      const clockedToday = hasCurrentDateInRange ? currentDayStats?.clocked || 0 : 0;
       const clockedPastDays = totalClocked - clockedToday;
 
       const splitRows = [
@@ -287,6 +340,7 @@ async function runStats(days: number = 7, brief = false, showAggregates = true):
 
 async function runStatsForRange(from: string, to: string, brief = false, showAggregates = true): Promise<void> {
   const config = getConfigOrExit();
+  const ignoredTicketIds = new Set(config.ignoredRedmineTicketIds ?? []);
 
   try {
     const user = await fetchCurrentUser(config);
@@ -308,6 +362,7 @@ async function runStatsForRange(from: string, to: string, brief = false, showAgg
       brief,
       showAggregates,
       targetHours,
+      ignoredTicketIds,
     );
   } catch (error) {
     if (error instanceof Error) {

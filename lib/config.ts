@@ -15,6 +15,42 @@ export interface Config {
   mssqlPassword: string;
   slackUserId: string;
   targetHoursPerDay?: number;
+  ignoredRedmineTicketIds?: number[];
+}
+
+function parseIgnoredTicketIds(input: string): { ids: number[]; invalid: string[] } {
+  if (!input.trim()) {
+    return { ids: [], invalid: [] };
+  }
+
+  const parts = input
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+
+  const invalid: string[] = [];
+  const ids: number[] = [];
+
+  for (const part of parts) {
+    const num = Number(part);
+    if (Number.isInteger(num) && num > 0) {
+      ids.push(num);
+    } else {
+      invalid.push(part);
+    }
+  }
+
+  return { ids: Array.from(new Set(ids)), invalid };
+}
+
+function normalizeConfig(config: Config): Config {
+  return {
+    ...config,
+    ignoredRedmineTicketIds: Array.isArray(config.ignoredRedmineTicketIds)
+      ? config.ignoredRedmineTicketIds
+        .filter((id) => Number.isInteger(id) && id > 0)
+      : [],
+  };
 }
 
 export function getConfigPath(): string {
@@ -29,7 +65,8 @@ export function loadConfig(): Config | null {
   if (!existsSync(CONFIG_FILE)) return null;
   try {
     const content = readFileSync(CONFIG_FILE, "utf-8");
-    return JSON.parse(content) as Config;
+    const parsed = JSON.parse(content) as Config;
+    return normalizeConfig(parsed);
   } catch {
     return null;
   }
@@ -39,7 +76,7 @@ export function saveConfig(config: Config): void {
   if (!existsSync(CONFIG_DIR)) {
     mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
   }
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), { mode: 0o600 });
+  writeFileSync(CONFIG_FILE, JSON.stringify(normalizeConfig(config), null, 2), { mode: 0o600 });
 }
 
 export function deleteConfig(): boolean {
@@ -134,6 +171,18 @@ export async function promptForConfig(existingConfig?: Config | null): Promise<C
       targetHoursPerDay: parseFloat(await prompt(rl, "  Target hours per day", existingConfig?.targetHoursPerDay?.toString() ?? "8")),
     };
 
+    // Handle ignored ticket IDs separately to validate and warn about invalid inputs
+    const ticketIdsInput = await prompt(
+      rl,
+      "  Ignored Redmine ticket IDs (comma-separated)",
+      existingConfig?.ignoredRedmineTicketIds?.join(",") ?? ""
+    );
+    const parsedTickets = parseIgnoredTicketIds(ticketIdsInput);
+    if (parsedTickets.invalid.length > 0) {
+      console.log(`  Warning: Ignored invalid ticket ID(s): ${parsedTickets.invalid.join(", ")}`);
+    }
+    config.ignoredRedmineTicketIds = parsedTickets.ids;
+
     rl.close();
 
     // Validate required fields
@@ -155,6 +204,10 @@ export async function promptForConfig(existingConfig?: Config | null): Promise<C
     if (isNaN(config.targetHoursPerDay!) || config.targetHoursPerDay! <= 0) {
       console.log("  Warning: Invalid target hours, using default of 8");
       config.targetHoursPerDay = 8;
+    }
+
+    if ((existingConfig?.ignoredRedmineTicketIds?.length ?? 0) > 0 && config.ignoredRedmineTicketIds!.length === 0) {
+      console.log("  Note: Ignored ticket list cleared.");
     }
 
     // Normalize URL
