@@ -68,7 +68,7 @@ function showConfig(): void {
       console.log(c.line(`    MSSQL Database:    ${c.highlight(config.mssqlDatabase)}`));
       console.log(c.line(`    MSSQL User:        ${c.highlight(config.mssqlUser)}`));
       console.log(c.line(`    User ID:           ${c.highlight(config.slackUserId)}`));
-      console.log(c.line(`    Target hours/day:  ${c.highlight(`${config.targetHoursPerDay ?? 8}h`)}\n`));
+      console.log(c.line(`    Target hours/day:  ${c.highlight(`${config.targetHoursPerDay ?? 8}h`)}`));
       const ignored = config.ignoredRedmineTicketIds ?? [];
       const ignoredLabel = ignored.length > 0 ? ignored.join(", ") : "(none)";
       console.log(c.line(`    Ignored tickets:   ${c.highlight(ignoredLabel)}\n`));
