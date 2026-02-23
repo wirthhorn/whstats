@@ -9,6 +9,12 @@ export function getDateRange(days: number = 7): { from: string; to: string } {
   return { from: formatDate(fromDate), to: formatDate(today) };
 }
 
+export function getYearToDateRange(): { from: string; to: string } {
+  const today = new Date();
+  const fromDate = new Date(today.getFullYear(), 0, 1);
+  return { from: formatDate(fromDate), to: formatDate(today) };
+}
+
 export function formatHours(hours: number): string {
   return hours % 1 === 0 ? `${hours}h` : `${hours.toFixed(2)}h`;
 }

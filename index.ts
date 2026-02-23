@@ -10,7 +10,7 @@ import {
 } from "./lib/config.js";
 import { fetchCurrentUser, fetchTimeEntries, type TimeEntry } from "./lib/redmine.js";
 import { fetchClockedHours } from "./lib/mssql.js";
-import { getDateRange, formatHours, truncateComment, getDayName, truncateProject } from "./lib/utils.js";
+import { getDateRange, getYearToDateRange, formatHours, truncateComment, getDayName, truncateProject } from "./lib/utils.js";
 import { colors as c, stripAnsi } from "./lib/colors.js";
 import { VERSION } from "./lib/version.js";
 
@@ -32,6 +32,7 @@ function showHelp(): void {
 ${helpLine("whstats                ", "Show time statistics for the last 7 days (default)")}
 ${helpLine("whstats --week         ", "Show time statistics for the last 7 days (week)")}
 ${helpLine("whstats --month        ", "Show time statistics for the last 30 days (month)")}
+${helpLine("whstats --year-to-date ", "Show time statistics from Jan 1 to today (-ytd)")}
 ${helpLine("whstats --brief        ", "Show concise output (daily totals only)")}
 ${helpLine("whstats --no-summary   ", "Show without aggregate summary (-n)")}
 ${helpLine("whstats --setup        ", "Configure credentials (interactive)")}
@@ -280,6 +281,11 @@ function displayResults(
 }
 
 async function runStats(days: number = 7, brief = false, showAggregates = true): Promise<void> {
+  const { from, to } = getDateRange(days);
+  await runStatsForRange(from, to, brief, showAggregates);
+}
+
+async function runStatsForRange(from: string, to: string, brief = false, showAggregates = true): Promise<void> {
   const config = getConfigOrExit();
 
   try {
@@ -287,8 +293,6 @@ async function runStats(days: number = 7, brief = false, showAggregates = true):
     if (!brief) {
       console.log(c.line(`\n${c.info(`Fetching time entries for ${user.firstname} ${user.lastname}...`)}`));
     }
-
-    const { from, to } = getDateRange(days);
 
     const [entries, clockedData] = await Promise.all([
       fetchTimeEntries(config, user.id, from, to),
@@ -323,6 +327,7 @@ const COMMAND_FLAGS = new Set([
   "--reset", "-r",
   "--week", "-w",
   "--month", "-m",
+  "--year-to-date", "-ytd",
 ]);
 
 const MODIFIER_FLAGS = new Set(["--brief", "-b", "--no-summary", "-n"]);
@@ -385,6 +390,13 @@ async function main(): Promise<void> {
     case "--month":
       await runStats(30, brief, showAggregates);
       break;
+
+    case "-ytd":
+    case "--year-to-date": {
+      const { from, to } = getYearToDateRange();
+      await runStatsForRange(from, to, brief, showAggregates);
+      break;
+    }
 
     case undefined:
       await runStats(7, brief, showAggregates);

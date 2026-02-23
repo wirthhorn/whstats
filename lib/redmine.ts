@@ -51,19 +51,33 @@ export async function fetchTimeEntries(
   from: string,
   to: string
 ): Promise<TimeEntry[]> {
-  const url = `${config.redmineUrl}/time_entries.json?user_id=${userId}&from=${from}&to=${to}&limit=100`;
+  const allEntries: TimeEntry[] = [];
+  const limit = 100;
+  let offset = 0;
 
-  const response = await fetch(url, {
-    headers: {
-      "X-Redmine-API-Key": config.redmineApiKey,
-      "Content-Type": "application/json",
-    },
-  });
+  while (true) {
+    const url = `${config.redmineUrl}/time_entries.json?user_id=${encodeURIComponent(String(userId))}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&limit=${limit}&offset=${offset}`;
 
-  if (!response.ok) {
-    throw new Error(`Redmine API error: ${response.status} ${response.statusText}`);
+    const response = await fetch(url, {
+      headers: {
+        "X-Redmine-API-Key": config.redmineApiKey,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Redmine API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = (await response.json()) as TimeEntriesResponse;
+    allEntries.push(...data.time_entries);
+
+    if (data.time_entries.length < limit || allEntries.length >= data.total_count) {
+      break;
+    }
+
+    offset += limit;
   }
 
-  const data = (await response.json()) as TimeEntriesResponse;
-  return data.time_entries;
+  return allEntries;
 }

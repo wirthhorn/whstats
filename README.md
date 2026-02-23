@@ -24,6 +24,9 @@ whstats --setup
 # Show time statistics
 whstats
 
+# Show year-to-date statistics
+whstats --year-to-date
+
 # Show config file location and current settings
 whstats --config
 
@@ -102,6 +105,8 @@ bun run index.ts --week        # Explicit week view
 bun run index.ts -w            # Short flag
 bun run index.ts --month       # Last 30 days
 bun run index.ts -m            # Short flag
+bun run index.ts --year-to-date # Jan 1 through today
+bun run index.ts -ytd           # Short flag
 
 # Test output modifiers
 bun run index.ts --brief       # Concise output
@@ -141,6 +146,7 @@ node dist/index.js --version   # Verify version matches package.json
 - [ ] Default command (no args) shows last 7 days
 - [ ] `--week` / `-w` shows 7 days
 - [ ] `--month` / `-m` shows 30 days
+- [ ] `--year-to-date` / `-ytd` shows Jan 1 through today
 - [ ] `--brief` / `-b` shows concise output (no per-entry details)
 - [ ] `--no-summary` / `-n` hides the summary section
 - [ ] Flag combinations work correctly (e.g., `--month --brief`)
