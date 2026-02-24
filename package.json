@@ -2,9 +2,22 @@
   "name": "whstats",
   "version": "1.2.3",
   "description": "WH Stats - Compare booked hours (Redmine) vs clocked hours (timelogger)",
-  "author": "Armin Emmert <emmertarmin@gmail.com>",
+  "keywords": [
+    "cli",
+    "redmine",
+    "statistics",
+    "time-tracking"
+  ],
+  "homepage": "https://github.com/emmertarmin/whstats#readme",
+  "bugs": {
+    "url": "https://github.com/emmertarmin/whstats/issues"
+  },
   "license": "MIT",
-  "type": "module",
+  "author": "Armin Emmert <emmertarmin@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/emmertarmin/whstats.git"
+  },
   "bin": {
     "whstats": "./dist/index.js"
   },
@@ -12,35 +25,25 @@
     "dist/**/*.js",
     "dist/**/*.d.ts"
   ],
+  "type": "module",
   "scripts": {
     "prebuild": "bun -e \"import p from './package.json' with {type:'json'}; await Bun.write('lib/version.ts', 'export const VERSION = \\\"' + p.version + '\\\";\\n')\"",
     "build": "tsc",
     "tsc": "tsc --noEmit",
+    "fmt:check": "oxfmt --check .",
+    "fmt": "oxfmt --write .",
     "prepublishOnly": "npm run build"
   },
-  "keywords": [
-    "redmine",
-    "time-tracking",
-    "statistics",
-    "cli"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/emmertarmin/whstats.git"
-  },
-  "bugs": {
-    "url": "https://github.com/emmertarmin/whstats/issues"
-  },
-  "homepage": "https://github.com/emmertarmin/whstats#readme",
-  "engines": {
-    "node": ">=18"
+  "dependencies": {
+    "mssql": "^12.2.0"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/mssql": "^9.1.5",
+    "oxfmt": "^0.35.0",
     "typescript": "^5"
   },
-  "dependencies": {
-    "mssql": "^12.2.0"
+  "engines": {
+    "node": ">=18"
   }
 }

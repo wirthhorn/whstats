@@ -16,7 +16,7 @@ function addHoursForInterval(
   hoursByDate: Map<string, number>,
   day: string,
   start: Date,
-  end: Date
+  end: Date,
 ): void {
   const durationMs = end.getTime() - start.getTime();
   if (durationMs <= 0) {
@@ -31,7 +31,7 @@ function addHoursForInterval(
 export async function fetchClockedHours(
   config: Config,
   from: string,
-  to: string
+  to: string,
 ): Promise<ClockedHoursResult> {
   const sqlConfig: sql.config = {
     server: config.mssqlServer,
@@ -50,11 +50,11 @@ export async function fetchClockedHours(
   try {
     // Query raw events and aggregate in TypeScript using explicit state transitions.
     // This avoids overcounting when redundant start/stop events are emitted.
-    const result = await pool.request()
+    const result = await pool
+      .request()
       .input("userId", sql.Int, parseInt(config.slackUserId))
       .input("fromDate", sql.Date, from)
-      .input("toDate", sql.Date, to)
-      .query(`
+      .input("toDate", sql.Date, to).query(`
         SELECT
           [date] AS event_time,
           [clock]
@@ -106,8 +106,7 @@ export async function fetchClockedHours(
       addHoursForInterval(clockedHours, activeDay, activeStart, closingTime);
     }
 
-    const statusResult = await pool.request()
-      .input("userId", sql.Int, parseInt(config.slackUserId))
+    const statusResult = await pool.request().input("userId", sql.Int, parseInt(config.slackUserId))
       .query(`
         SELECT
           CAST(GETDATE() AS DATE) AS today,

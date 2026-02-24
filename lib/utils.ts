@@ -1,3 +1,5 @@
+import type { TimeEntry } from "./redmine.js";
+
 export function formatDate(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -19,7 +21,10 @@ export function getYearToDateRange(): { from: string; to: string } {
 }
 
 export function formatHours(hours: number): string {
-  return hours % 1 === 0 ? `${hours}h` : `${hours.toFixed(2)}h`;
+  if (hours % 1 === 0) {
+    return `${hours}h`;
+  }
+  return `${hours.toFixed(2)}h`;
 }
 
 export function truncateComment(comment: string, maxLength: number = 50): string {
@@ -36,4 +41,36 @@ export function truncateProject(name: string, maxLength: number = 5): string {
 export function getDayName(dateStr: string): string {
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   return days[new Date(dateStr).getDay()]!;
+}
+
+export function groupByDate(entries: TimeEntry[]): Map<string, TimeEntry[]> {
+  const grouped = new Map<string, TimeEntry[]>();
+
+  for (const entry of entries) {
+    const date = entry.spent_on;
+    if (!grouped.has(date)) {
+      grouped.set(date, []);
+    }
+    grouped.get(date)!.push(entry);
+  }
+
+  return grouped;
+}
+
+export function isIgnoredEntry(entry: TimeEntry, ignoredTicketIds: ReadonlySet<number>): boolean {
+  const issueId = entry.issue?.id;
+  return issueId !== undefined && ignoredTicketIds.has(issueId);
+}
+
+export function calculateEffectiveBookedHours(
+  entries: TimeEntry[],
+  ignoredTicketIds: ReadonlySet<number>,
+): number {
+  return entries.reduce((sum, entry) => {
+    return isIgnoredEntry(entry, ignoredTicketIds) ? sum : sum + entry.hours;
+  }, 0);
+}
+
+export function calculateRawBookedHours(entries: TimeEntry[]): number {
+  return entries.reduce((sum, entry) => sum + entry.hours, 0);
 }

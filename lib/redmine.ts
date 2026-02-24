@@ -49,7 +49,7 @@ export async function fetchTimeEntries(
   config: Config,
   userId: number,
   from: string,
-  to: string
+  to: string,
 ): Promise<TimeEntry[]> {
   const allEntries: TimeEntry[] = [];
   const limit = 100;

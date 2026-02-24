@@ -10,16 +10,26 @@ import {
 } from "./lib/config.js";
 import { fetchCurrentUser, fetchTimeEntries, type TimeEntry } from "./lib/redmine.js";
 import { fetchClockedHours } from "./lib/mssql.js";
-import { getDateRange, getYearToDateRange, formatHours, truncateComment, getDayName, truncateProject } from "./lib/utils.js";
-import { colors as c, stripAnsi } from "./lib/colors.js";
+import {
+  getDateRange,
+  getYearToDateRange,
+  formatHours,
+  groupByDate,
+  calculateEffectiveBookedHours,
+  calculateRawBookedHours,
+} from "./lib/utils.js";
+import { colors as c } from "./lib/colors.js";
 import { VERSION } from "./lib/version.js";
+import type { DayStats, SummaryData, StatsData } from "./lib/output/types.js";
+import { renderDayHeader, renderEntries, renderSummary } from "./lib/output/human.js";
 
 function helpLine(flag: string, desc: string): string {
   return `    ${c.highlight(flag)} ${c.dim(desc)}`;
 }
 
 function showHelp(): void {
-  console.log(c.line(`
+  console.log(
+    c.line(`
   ${c.info(`WH Stats`)} ${c.dim(`v${VERSION}`)}
 
   Compare booked hours (Redmine) vs clocked hours (timelogger).
@@ -44,7 +54,8 @@ ${helpLine("whstats --version      ", "Show version")}
   ${c.info("Configuration:")}
     Run ${c.highlight("'whstats --setup'")} to configure your credentials interactively.
     Credentials are stored in: ${c.dim("~/.config/whstats/config.json")}
-`));
+`),
+  );
 }
 
 function showVersion(): void {
@@ -56,19 +67,25 @@ function showConfig(): void {
   const exists = configExists();
 
   console.log(c.line(`\n  Config file: ${configPath}`));
-  console.log(c.line(`  Status: ${exists ? c.success("configured") : c.warning("not configured")}\n`));
+  console.log(
+    c.line(`  Status: ${exists ? c.success("configured") : c.warning("not configured")}\n`),
+  );
 
   if (exists) {
     const config = loadConfig();
     if (config) {
       console.log(c.line("  Current settings:"));
       console.log(c.line(`    Redmine URL:       ${c.highlight(config.redmineUrl)}`));
-      console.log(c.line(`    Redmine API:       ${c.highlight(config.redmineApiKey.slice(0, 8))}...`));
+      console.log(
+        c.line(`    Redmine API:       ${c.highlight(config.redmineApiKey.slice(0, 8))}...`),
+      );
       console.log(c.line(`    MSSQL Server:      ${c.highlight(config.mssqlServer)}`));
       console.log(c.line(`    MSSQL Database:    ${c.highlight(config.mssqlDatabase)}`));
       console.log(c.line(`    MSSQL User:        ${c.highlight(config.mssqlUser)}`));
       console.log(c.line(`    User ID:           ${c.highlight(config.slackUserId)}`));
-      console.log(c.line(`    Target hours/day:  ${c.highlight(`${config.targetHoursPerDay ?? 8}h`)}`));
+      console.log(
+        c.line(`    Target hours/day:  ${c.highlight(`${config.targetHoursPerDay ?? 8}h`)}`),
+      );
       const ignored = config.ignoredRedmineTicketIds ?? [];
       const ignoredLabel = ignored.length > 0 ? ignored.join(", ") : "(none)";
       console.log(c.line(`    Ignored tickets:   ${c.highlight(ignoredLabel)}\n`));
@@ -89,29 +106,113 @@ function handleReset(): void {
   }
 }
 
-function groupByDate(entries: TimeEntry[]): Map<string, TimeEntry[]> {
-  const grouped = new Map<string, TimeEntry[]>();
+function prepareStatsData(
+  entries: TimeEntry[],
+  clockedHours: Map<string, number>,
+  currentDate: string,
+  isCurrentDayClockRunning: boolean,
+  targetHoursPerDay: number,
+  ignoredTicketIds: ReadonlySet<number>,
+): StatsData {
+  const isIgnored = (entry: TimeEntry): boolean => {
+    const issueId = entry.issue?.id;
+    return issueId !== undefined && ignoredTicketIds.has(issueId);
+  };
 
-  for (const entry of entries) {
-    const date = entry.spent_on;
-    if (!grouped.has(date)) {
-      grouped.set(date, []);
+  const grouped = groupByDate(entries);
+
+  // Combine all dates from both sources
+  const allDates = new Set([...grouped.keys(), ...clockedHours.keys()]);
+  const sortedDates = Array.from(allDates).sort();
+
+  const dayStats: DayStats[] = sortedDates.map((date) => {
+    const dayEntries = grouped.get(date) || [];
+    const rawBooked = calculateRawBookedHours(dayEntries);
+    const effectiveBooked = calculateEffectiveBookedHours(dayEntries, ignoredTicketIds);
+    const clocked = clockedHours.get(date) || 0;
+    const excludedFromTarget =
+      dayEntries.length > 0 && dayEntries.every((entry) => isIgnored(entry)) && clocked === 0;
+
+    return {
+      date,
+      dayName: new Date(date).toLocaleDateString("en-US", { weekday: "short" }),
+      rawBooked,
+      effectiveBooked,
+      clocked,
+      excludedFromTarget,
+      entries: dayEntries,
+    };
+  });
+
+  // Calculate totals
+  let totalBooked = 0;
+  let totalClocked = 0;
+  for (const stats of dayStats) {
+    totalBooked += stats.effectiveBooked;
+    totalClocked += stats.clocked;
+  }
+
+  const eligibleDayStats = dayStats.filter((stats) => !stats.excludedFromTarget);
+  const workdays = eligibleDayStats.length;
+  const currentDayStats = dayStats.find((stats) => stats.date === currentDate);
+  const hasCurrentDateInRange = currentDayStats !== undefined;
+
+  let targetTotal = 0;
+  let hasAdjustedCurrentDayTarget = false;
+  let adjustedCurrentDayTarget = 0;
+
+  for (const stats of eligibleDayStats) {
+    let dayTarget = targetHoursPerDay;
+    if (isCurrentDayClockRunning && stats.date === currentDate) {
+      const clockedToday = stats.clocked;
+      dayTarget = Math.min(clockedToday, targetHoursPerDay);
+      hasAdjustedCurrentDayTarget = dayTarget !== targetHoursPerDay;
+      adjustedCurrentDayTarget = dayTarget;
     }
-    grouped.get(date)!.push(entry);
+    targetTotal += dayTarget;
   }
 
-  return grouped;
-}
+  const bookedToday = currentDayStats?.effectiveBooked ?? 0;
+  const bookedPastDays = totalBooked - bookedToday;
+  const clockedToday = hasCurrentDateInRange ? currentDayStats?.clocked || 0 : 0;
+  const clockedPastDays = totalClocked - clockedToday;
 
-function colorizePercentage(value: number, label?: string): string {
-  const text = label ?? `${value}%`;
-  if (value > 95) {
-    return c.success(text);
-  }
-  if (value >= 90) {
-    return c.warning(text);
-  }
-  return c.danger(text);
+  const bookedDiscrepancy = totalBooked - targetTotal;
+  const clockedDiscrepancy = totalClocked - targetTotal;
+  const bookedPct = targetTotal > 0 ? Math.round((totalBooked / targetTotal) * 100) : 0;
+  const clockedPct = targetTotal > 0 ? Math.round((totalClocked / targetTotal) * 100) : 0;
+  const efficiency = totalClocked > 0 ? Math.round((totalBooked / totalClocked) * 100) : 0;
+
+  const summary: SummaryData = {
+    workdays,
+    targetHoursPerDay,
+    targetTotal,
+    hasAdjustedCurrentDayTarget,
+    adjustedCurrentDayTarget,
+    booked: {
+      total: totalBooked,
+      past: bookedPastDays,
+      today: bookedToday,
+    },
+    clocked: {
+      total: totalClocked,
+      past: clockedPastDays,
+      today: clockedToday,
+    },
+    discrepancies: {
+      booked: bookedDiscrepancy,
+      clocked: clockedDiscrepancy,
+    },
+    percentages: {
+      booked: bookedPct,
+      clocked: clockedPct,
+      efficiency,
+    },
+    currentDate,
+    isClockRunningToday: isCurrentDayClockRunning,
+  };
+
+  return { days: dayStats, summary };
 }
 
 function displayResults(
@@ -122,213 +223,36 @@ function displayResults(
   brief = false,
   showAggregates = true,
   targetHoursPerDay = 8,
-  ignoredTicketIds: ReadonlySet<number> = new Set<number>()
+  ignoredTicketIds: ReadonlySet<number> = new Set<number>(),
 ): void {
-  const isIgnoredEntry = (entry: TimeEntry): boolean => {
-    const issueId = entry.issue?.id;
-    return issueId !== undefined && ignoredTicketIds.has(issueId);
-  };
-
-  const calculateEffectiveBookedHours = (dayEntries: TimeEntry[]): number => {
-    return dayEntries.reduce((sum, entry) => {
-      return isIgnoredEntry(entry) ? sum : sum + entry.hours;
-    }, 0);
-  };
-
-  const calculateRawBookedHours = (dayEntries: TimeEntry[]): number => {
-    return dayEntries.reduce((sum, entry) => sum + entry.hours, 0);
-  };
-
-  const grouped = groupByDate(entries);
-
-  // Combine all dates from both sources
-  const allDates = new Set([...grouped.keys(), ...clockedHours.keys()]);
-  const sortedDates = Array.from(allDates).sort();
-
-  if (sortedDates.length === 0) {
-    console.log(c.line(c.warning("No time entries found for the selected period.")));
-    return;
-  }
-
-  interface DayStats {
-    date: string;
-    entries: TimeEntry[];
-    rawBooked: number;
-    effectiveBooked: number;
-    clocked: number;
-    excludedFromTarget: boolean;
-  }
-
-  const dayStats: DayStats[] = sortedDates.map((date) => {
-    const dayEntries = grouped.get(date) || [];
-    const rawBooked = calculateRawBookedHours(dayEntries);
-    const effectiveBooked = calculateEffectiveBookedHours(dayEntries);
-    const clocked = clockedHours.get(date) || 0;
-    const excludedFromTarget = dayEntries.length > 0 && dayEntries.every((entry) => isIgnoredEntry(entry)) && clocked === 0;
-
-    return {
-      date,
-      entries: dayEntries,
-      rawBooked,
-      effectiveBooked,
-      clocked,
-      excludedFromTarget,
-    };
-  });
-
-  // Calculate totals for aggregates (ignored entries excluded)
-  let totalBooked = 0;
-  let totalClocked = 0;
+  const statsData = prepareStatsData(
+    entries,
+    clockedHours,
+    currentDate,
+    isCurrentDayClockRunning,
+    targetHoursPerDay,
+    ignoredTicketIds,
+  );
 
   console.log("");
-  for (const stats of dayStats) {
-    const dayName = getDayName(stats.date);
 
-    totalBooked += stats.effectiveBooked;
-    totalClocked += stats.clocked;
-
-    const clockedStr = stats.clocked > 0 ? formatHours(stats.clocked) : "-";
-    const dayLine = `${stats.date} [${dayName}]: ${formatHours(stats.rawBooked)} booked / ${clockedStr} clocked`;
-    console.log(
-      c.line(
-        stats.excludedFromTarget
-          ? c.dim(dayLine)
-          : `${c.info(stats.date)} ${c.dim(`[${dayName}]`)}: ${c.highlight(formatHours(stats.rawBooked))} booked / ${stats.clocked > 0 ? c.highlight(clockedStr) : clockedStr} clocked`
-      )
-    );
+  for (const day of statsData.days) {
+    for (const line of renderDayHeader(day)) {
+      console.log(line);
+    }
 
     if (!brief) {
-      for (const entry of stats.entries) {
-        const isIgnored = isIgnoredEntry(entry);
-        const issueRef = entry.issue ? `#${entry.issue.id}` : "#N/A";
-        const project = truncateProject(entry.project?.name || "N/A");
-        const hours = formatHours(entry.hours).padStart(5, " ");
-        const comment = truncateComment(entry.comments || "(no comment)");
-        if (isIgnored) {
-          console.log(c.line(c.dim(`    ${hours} ${project} ${issueRef} ${comment}`)));
-        } else {
-          const renderedHours = c.highlight(hours);
-          console.log(c.line(`    ${renderedHours} ${c.warning(project)} ${c.danger(issueRef)} ${c.dim(comment)}`));
-        }
+      for (const line of renderEntries(day.entries, ignoredTicketIds)) {
+        console.log(line);
       }
       console.log("");
     }
   }
 
-  // Display aggregates if enabled
   if (showAggregates) {
-    const eligibleDayStats = dayStats.filter((stats) => !stats.excludedFromTarget);
-    const workdays = eligibleDayStats.length;
-    let targetTotal = 0;
-    let hasAdjustedCurrentDayTarget = false;
-    let adjustedCurrentDayTarget = 0;
-    const currentDayStats = dayStats.find((stats) => stats.date === currentDate);
-    const hasCurrentDateInRange = currentDayStats !== undefined;
-    const bookedToday = currentDayStats?.effectiveBooked ?? 0;
-    const bookedPastDays = totalBooked - bookedToday;
-
-    for (const stats of eligibleDayStats) {
-      let dayTarget = targetHoursPerDay;
-      if (isCurrentDayClockRunning && stats.date === currentDate) {
-        const clockedToday = stats.clocked;
-        dayTarget = Math.min(clockedToday, targetHoursPerDay);
-        hasAdjustedCurrentDayTarget = dayTarget !== targetHoursPerDay;
-        adjustedCurrentDayTarget = dayTarget;
-      }
-      targetTotal += dayTarget;
+    for (const line of renderSummary(statsData.summary)) {
+      console.log(line);
     }
-
-    const bookedDiscrepancy = totalBooked - targetTotal;
-    const clockedDiscrepancy = totalClocked - targetTotal;
-    const bookedPct = targetTotal > 0 ? Math.round((totalBooked / targetTotal) * 100) : 0;
-    const clockedPct = targetTotal > 0 ? Math.round((totalClocked / targetTotal) * 100) : 0;
-    const efficiency = totalClocked > 0 ? Math.round((totalBooked / totalClocked) * 100) : 0;
-    const efficiencyLine = `    Efficiency: ${colorizePercentage(efficiency)} ${c.dim("(booked/clocked ratio)")}`;
-
-    const pastDaysTarget = targetTotal - adjustedCurrentDayTarget;
-    const summary = `Summary (${workdays} days)`;
-
-    const bookedSign = bookedDiscrepancy > 0 ? "+" : "";
-    const clockedSign = clockedDiscrepancy > 0 ? "+" : "";
-
-    if (hasAdjustedCurrentDayTarget) {
-      const clockedToday = hasCurrentDateInRange ? currentDayStats?.clocked || 0 : 0;
-      const clockedPastDays = totalClocked - clockedToday;
-
-      const splitRows = [
-        {
-          prefix: "    Target:",
-          past: formatHours(pastDaysTarget),
-          today: formatHours(adjustedCurrentDayTarget),
-          pctValue: undefined as number | undefined,
-          discrepancy: "",
-          tail: "target",
-        },
-        {
-          prefix: "    Booked:",
-          past: formatHours(bookedPastDays),
-          today: formatHours(bookedToday),
-          pctValue: bookedPct,
-          discrepancy: `(${bookedSign}${formatHours(bookedDiscrepancy)})`,
-          tail: "",
-        },
-        {
-          prefix: "    Clocked:",
-          past: formatHours(clockedPastDays),
-          today: formatHours(clockedToday),
-          pctValue: clockedPct,
-          discrepancy: `(${clockedSign}${formatHours(clockedDiscrepancy)})`,
-          tail: "",
-        },
-      ];
-
-      const pctLabels = splitRows.map((row) => (row.pctValue === undefined ? "" : `${row.pctValue}%`));
-
-      const prefixWidth = Math.max(...splitRows.map((row) => row.prefix.length));
-      const pastWidth = Math.max(...splitRows.map((row) => row.past.length));
-      const todayWidth = Math.max(...splitRows.map((row) => row.today.length));
-      const pctWidth = Math.max(...pctLabels.map((label) => label.length));
-      const discrepancyWidth = Math.max(...splitRows.map((row) => row.discrepancy.length));
-
-      const rowLines = splitRows.map((row, index) => {
-        const pctLabel = pctLabels[index]!;
-        const paddedPct = pctLabel.padStart(pctWidth, " ");
-        const coloredPct = row.pctValue === undefined ? "" : colorizePercentage(row.pctValue, paddedPct);
-        if (pctLabel.length === 0 && row.discrepancy.length === 0) {
-          return `${row.prefix.padEnd(prefixWidth, " ")} ${c.highlight(row.past.padStart(pastWidth, " "))} + ${c.highlight(row.today.padStart(todayWidth, " "))} ${row.tail}`;
-        }
-        return `${row.prefix.padEnd(prefixWidth, " ")} ${c.highlight(row.past.padStart(pastWidth, " "))} + ${c.highlight(row.today.padStart(todayWidth, " "))} = ${coloredPct} ${c.dim(row.discrepancy.padStart(discrepancyWidth, " "))}`;
-      });
-
-      const separatorWidth = Math.max(
-        summary.length,
-        stripAnsi(efficiencyLine).length,
-        ...rowLines.map((line) => stripAnsi(line).length),
-      );
-      console.log(c.line("─".repeat(separatorWidth)));
-      console.log(c.line(`Summary ${c.dim(`(${workdays} days)`)}`));
-
-      for (const line of rowLines) {
-        console.log(c.line(line));
-      }
-    } else {
-      const targetLine = `    Target:  ${c.highlight(formatHours(targetHoursPerDay))}/day = ${c.highlight(formatHours(targetTotal))} target`;
-      const bookedLine = `    Booked:  ${c.highlight(formatHours(totalBooked))} = ${colorizePercentage(bookedPct)} ${c.dim(`(${bookedSign}${formatHours(bookedDiscrepancy)})`)}`;
-      const clockedLine = `    Clocked: ${c.highlight(formatHours(totalClocked))} = ${colorizePercentage(clockedPct)} ${c.dim(`(${clockedSign}${formatHours(clockedDiscrepancy)})`)}`;
-      const separatorWidth = Math.max(
-        summary.length,
-        stripAnsi(targetLine).length,
-        stripAnsi(bookedLine).length,
-        stripAnsi(clockedLine).length,
-        stripAnsi(efficiencyLine).length,
-      );
-      console.log(c.line("─".repeat(separatorWidth)));
-      console.log(c.line(`Summary ${c.dim(`(${workdays} days)`)}`));
-      console.log(c.line(targetLine));
-      console.log(c.line(bookedLine));
-      console.log(c.line(clockedLine));
-    }
-    console.log(c.line(efficiencyLine));
     console.log("");
   }
 }
@@ -338,14 +262,21 @@ async function runStats(days: number = 7, brief = false, showAggregates = true):
   await runStatsForRange(from, to, brief, showAggregates);
 }
 
-async function runStatsForRange(from: string, to: string, brief = false, showAggregates = true): Promise<void> {
+async function runStatsForRange(
+  from: string,
+  to: string,
+  brief = false,
+  showAggregates = true,
+): Promise<void> {
   const config = getConfigOrExit();
   const ignoredTicketIds = new Set(config.ignoredRedmineTicketIds ?? []);
 
   try {
     const user = await fetchCurrentUser(config);
     if (!brief) {
-      console.log(c.line(`\n${c.info(`Fetching time entries for ${user.firstname} ${user.lastname}...`)}`));
+      console.log(
+        c.line(`\n${c.info(`Fetching time entries for ${user.firstname} ${user.lastname}...`)}`),
+      );
     }
 
     const [entries, clockedData] = await Promise.all([
@@ -375,14 +306,22 @@ async function runStatsForRange(from: string, to: string, brief = false, showAgg
 }
 
 const COMMAND_FLAGS = new Set([
-  "--help", "-h",
-  "--version", "-v",
-  "--setup", "-s",
-  "--config", "-c",
-  "--reset", "-r",
-  "--week", "-w",
-  "--month", "-m",
-  "--year-to-date", "-ytd",
+  "--help",
+  "-h",
+  "--version",
+  "-v",
+  "--setup",
+  "-s",
+  "--config",
+  "-c",
+  "--reset",
+  "-r",
+  "--week",
+  "-w",
+  "--month",
+  "-m",
+  "--year-to-date",
+  "-ytd",
 ]);
 
 const MODIFIER_FLAGS = new Set(["--brief", "-b", "--no-summary", "-n"]);
@@ -394,10 +333,8 @@ async function main(): Promise<void> {
   const showAggregates = !args.includes("--no-summary") && !args.includes("-n");
 
   // Check for unknown flags
-  const unknownFlag = args.find((arg) =>
-    arg.startsWith("-") &&
-    !COMMAND_FLAGS.has(arg) &&
-    !MODIFIER_FLAGS.has(arg)
+  const unknownFlag = args.find(
+    (arg) => arg.startsWith("-") && !COMMAND_FLAGS.has(arg) && !MODIFIER_FLAGS.has(arg),
   );
   if (unknownFlag) {
     console.error(c.line(`\n  ${c.warning(`Unknown flag: ${unknownFlag}`)}`));

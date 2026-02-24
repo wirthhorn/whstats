@@ -47,8 +47,7 @@ function normalizeConfig(config: Config): Config {
   return {
     ...config,
     ignoredRedmineTicketIds: Array.isArray(config.ignoredRedmineTicketIds)
-      ? config.ignoredRedmineTicketIds
-        .filter((id) => Number.isInteger(id) && id > 0)
+      ? config.ignoredRedmineTicketIds.filter((id) => Number.isInteger(id) && id > 0)
       : [],
   };
 }
@@ -88,9 +87,7 @@ export function deleteConfig(): boolean {
 }
 
 function prompt(rl: readline.Interface, question: string, defaultValue?: string): Promise<string> {
-  const displayQuestion = defaultValue
-    ? `${question} [${defaultValue}]: `
-    : `${question}: `;
+  const displayQuestion = defaultValue ? `${question} [${defaultValue}]: ` : `${question}: `;
 
   return new Promise((resolve) => {
     rl.question(displayQuestion, (answer) => {
@@ -161,21 +158,39 @@ export async function promptForConfig(existingConfig?: Config | null): Promise<C
 
   try {
     const config: Config = {
-      redmineUrl: await prompt(rl, "  Redmine URL", existingConfig?.redmineUrl ?? "https://redmine.wirth-horn.de/"),
+      redmineUrl: await prompt(
+        rl,
+        "  Redmine URL",
+        existingConfig?.redmineUrl ?? "https://redmine.wirth-horn.de/",
+      ),
       redmineApiKey: await prompt(rl, "  Redmine API Key", existingConfig?.redmineApiKey),
       mssqlServer: await prompt(rl, "  MSSQL Server", existingConfig?.mssqlServer ?? "10.10.10.15"),
-      mssqlDatabase: await prompt(rl, "  MSSQL Database", existingConfig?.mssqlDatabase ?? "wh_timelogger"),
+      mssqlDatabase: await prompt(
+        rl,
+        "  MSSQL Database",
+        existingConfig?.mssqlDatabase ?? "wh_timelogger",
+      ),
       mssqlUser: await prompt(rl, "  MSSQL User", existingConfig?.mssqlUser),
       mssqlPassword: await prompt(rl, "  MSSQL Password", existingConfig?.mssqlPassword),
-      slackUserId: await prompt(rl, "  User ID (in timelogger). Use /wh debug in Slack to find it.", existingConfig?.slackUserId),
-      targetHoursPerDay: parseFloat(await prompt(rl, "  Target hours per day", existingConfig?.targetHoursPerDay?.toString() ?? "8")),
+      slackUserId: await prompt(
+        rl,
+        "  User ID (in timelogger). Use /wh debug in Slack to find it.",
+        existingConfig?.slackUserId,
+      ),
+      targetHoursPerDay: parseFloat(
+        await prompt(
+          rl,
+          "  Target hours per day",
+          existingConfig?.targetHoursPerDay?.toString() ?? "8",
+        ),
+      ),
     };
 
     // Handle ignored ticket IDs separately to validate and warn about invalid inputs
     const ticketIdsInput = await prompt(
       rl,
       "  Ignored Redmine ticket IDs (comma-separated)",
-      existingConfig?.ignoredRedmineTicketIds?.join(",") ?? ""
+      existingConfig?.ignoredRedmineTicketIds?.join(",") ?? "",
     );
     const parsedTickets = parseIgnoredTicketIds(ticketIdsInput);
     if (parsedTickets.invalid.length > 0) {
@@ -206,7 +221,10 @@ export async function promptForConfig(existingConfig?: Config | null): Promise<C
       config.targetHoursPerDay = 8;
     }
 
-    if ((existingConfig?.ignoredRedmineTicketIds?.length ?? 0) > 0 && config.ignoredRedmineTicketIds!.length === 0) {
+    if (
+      (existingConfig?.ignoredRedmineTicketIds?.length ?? 0) > 0 &&
+      config.ignoredRedmineTicketIds!.length === 0
+    ) {
       console.log("  Note: Ignored ticket list cleared.");
     }
 

@@ -86,6 +86,7 @@ bun run index.ts --help
 Before committing or publishing, verify the following:
 
 ### 1. TypeScript Compilation
+
 ```bash
 bun run build        # Should compile without errors
 
@@ -93,6 +94,7 @@ bun run tsc          # Typechecking
 ```
 
 ### 2. CLI Commands (without config)
+
 ```bash
 # Help and version (should work without config)
 bun run index.ts --help
@@ -106,6 +108,7 @@ bun run index.ts --reset       # Should show "No configuration file found"
 ```
 
 ### 3. CLI Commands (with config)
+
 ```bash
 # First, run setup to create config (requires valid credentials)
 bun run index.ts --setup
@@ -133,6 +136,7 @@ bun run index.ts --month --brief --no-summary
 ```
 
 ### 4. Error Handling
+
 ```bash
 # Unknown flags should error gracefully
 bun run index.ts --unknown     # Should show "Unknown flag"
@@ -140,6 +144,7 @@ bun run index.ts --foo         # Should exit with code 1
 ```
 
 ### 5. Built Distribution Test
+
 ```bash
 npm run build                  # Compile TypeScript
 node dist/index.js --help      # Test built version
@@ -178,6 +183,7 @@ Follow this checklist when publishing a new version:
 ### Version Bump & Publish
 
 1. **Bump version** (creates git tag automatically):
+
    ```bash
    npm version patch   # 1.0.0 → 1.0.1 (bug fixes)
    npm version minor   # 1.0.0 → 1.1.0 (new features)
@@ -192,7 +198,7 @@ Follow this checklist when publishing a new version:
 ### What Happens Automatically
 
 - `prepublishOnly` hook runs `npm run build` before publishing (compiles TypeScript)
-- Only files listed in `package.json` `files` array are published (dist/**/*.js, dist/**/*.d.ts)
+- Only files listed in `package.json` `files` array are published (dist/**/\*.js, dist/**/\*.d.ts)
 - npm creates a git tag (e.g., `v1.0.1`) when you run `npm version`
 
 ### Post-publish Verification
