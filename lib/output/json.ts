@@ -24,8 +24,8 @@ interface JsonSummary {
   workdays: number;
   targetHoursPerDay: number;
   targetTotal: number;
-  hasAdjustedCurrentDayTarget: boolean;
-  adjustedCurrentDayTarget: number;
+  hasPartialCurrentDayTarget: boolean;
+  partialCurrentDayTarget: number;
   booked: { total: number; past: number; today: number };
   clocked: { total: number; past: number; today: number };
   discrepancies: { booked: number; clocked: number };
@@ -95,8 +95,8 @@ export function render(
       workdays: statsData.summary.workdays,
       targetHoursPerDay: statsData.summary.targetHoursPerDay,
       targetTotal: statsData.summary.targetTotal,
-      hasAdjustedCurrentDayTarget: statsData.summary.hasAdjustedCurrentDayTarget,
-      adjustedCurrentDayTarget: statsData.summary.adjustedCurrentDayTarget,
+      hasPartialCurrentDayTarget: statsData.summary.hasPartialCurrentDayTarget,
+      partialCurrentDayTarget: statsData.summary.partialCurrentDayTarget,
       booked: statsData.summary.booked,
       clocked: statsData.summary.clocked,
       discrepancies: statsData.summary.discrepancies,

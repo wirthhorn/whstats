@@ -160,16 +160,16 @@ function prepareStatsData(
   const hasCurrentDateInRange = currentDayStats !== undefined;
 
   let targetTotal = 0;
-  let hasAdjustedCurrentDayTarget = false;
-  let adjustedCurrentDayTarget = 0;
+  let hasPartialCurrentDayTarget = false;
+  let partialCurrentDayTarget = 0;
 
   for (const stats of eligibleDayStats) {
     let dayTarget = targetHoursPerDay;
     if (isCurrentDayClockRunning && stats.date === currentDate) {
       const clockedToday = stats.clocked;
       dayTarget = Math.min(clockedToday, targetHoursPerDay);
-      hasAdjustedCurrentDayTarget = dayTarget !== targetHoursPerDay;
-      adjustedCurrentDayTarget = dayTarget;
+      hasPartialCurrentDayTarget = dayTarget !== targetHoursPerDay;
+      partialCurrentDayTarget = dayTarget;
     }
     targetTotal += dayTarget;
   }
@@ -189,8 +189,8 @@ function prepareStatsData(
     workdays,
     targetHoursPerDay,
     targetTotal,
-    hasAdjustedCurrentDayTarget,
-    adjustedCurrentDayTarget,
+    hasPartialCurrentDayTarget,
+    partialCurrentDayTarget,
     booked: {
       total: totalBooked,
       past: bookedPastDays,

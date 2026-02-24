@@ -71,13 +71,13 @@ function buildSummaryTable(data: SummaryData): { lines: string[]; maxWidth: numb
     .column({ align: "right" }) // %
     .column({ align: "left" }); // note
 
-  const pastDaysTarget = data.targetTotal - data.adjustedCurrentDayTarget;
+  const pastDaysTarget = data.targetTotal - data.partialCurrentDayTarget;
 
   table.addRow([
     "    Target:",
     c.highlight(formatHours(pastDaysTarget)),
     "+",
-    c.highlight(formatHours(data.adjustedCurrentDayTarget)),
+    c.highlight(formatHours(data.partialCurrentDayTarget)),
     "",
     "",
     "",

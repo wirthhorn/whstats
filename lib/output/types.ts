@@ -14,8 +14,8 @@ export interface SummaryData {
   workdays: number;
   targetHoursPerDay: number;
   targetTotal: number;
-  hasAdjustedCurrentDayTarget: boolean;
-  adjustedCurrentDayTarget: number;
+  hasPartialCurrentDayTarget: boolean;
+  partialCurrentDayTarget: number;
   booked: { total: number; past: number; today: number };
   clocked: { total: number; past: number; today: number };
   discrepancies: { booked: number; clocked: number };
