@@ -59,7 +59,7 @@ function transformEntry(entry: TimeEntry): JsonEntry {
   };
 }
 
-function transformDay(day: DayStats): JsonDay {
+function transformDay(day: DayStats, brief = false): JsonDay {
   return {
     date: day.date,
     dayName: day.dayName,
@@ -67,7 +67,7 @@ function transformDay(day: DayStats): JsonDay {
     netBooked: day.netBooked,
     clocked: day.clocked,
     excludedFromNet: day.excludedFromNet,
-    entries: day.entries.map(transformEntry),
+    entries: brief ? [] : day.entries.map(transformEntry),
   };
 }
 
@@ -87,7 +87,7 @@ export function render(
         to: toDate,
       },
     },
-    days: brief ? [] : statsData.days.map(transformDay),
+    days: statsData.days.map((day) => transformDay(day, brief)),
   };
 
   if (showSummary) {
