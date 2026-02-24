@@ -17,11 +17,12 @@ function colorizePercentageValue(value: number): string {
 
 export function renderDayHeader(stats: DayStats): string[] {
   const clockedStr = stats.clocked > 0 ? formatHours(stats.clocked) : "-";
-  const dayLine = `${stats.date} [${stats.dayName}]: ${formatHours(stats.rawBooked)} booked / ${clockedStr} clocked`;
+  const bookedStr = formatHours(stats.grossBooked);
+  const dayLine = `${stats.date} [${stats.dayName}]: ${c.highlight(bookedStr)} booked / ${clockedStr} clocked`;
 
-  const line = stats.excludedFromTarget
+  const line = stats.excludedFromNet
     ? c.dim(dayLine)
-    : `${c.info(stats.date)} ${c.dim(`[${stats.dayName}]`)}: ${formatHours(stats.rawBooked)} booked / ${stats.clocked > 0 ? c.highlight(clockedStr) : clockedStr} clocked`;
+    : `${c.info(stats.date)} ${c.dim(`[${stats.dayName}]`)}: ${c.highlight(bookedStr)} booked / ${c.highlight(clockedStr)} clocked`;
 
   return [c.line(line)];
 }
@@ -121,13 +122,15 @@ function buildSummaryTable(data: SummaryData): { lines: string[]; maxWidth: numb
 export function renderSummary(data: SummaryData): string[] {
   const { lines, maxWidth } = buildSummaryTable(data);
 
-  const header = `Summary (${data.workdays} days)`;
-  const separatorWidth = Math.max(maxWidth, header.length);
+  const header = c.line(
+    `Summary ${c.dim(`(past ${data.workdays} day${data.workdays !== 1 ? "s" : ""})`)}`,
+  );
+  const separatorWidth = Math.max(maxWidth, stripAnsi(header).length);
   const separator = c.line("─".repeat(separatorWidth));
 
   const result: string[] = [];
   result.push(separator);
-  result.push(c.line(`Summary ${c.dim(`(${data.workdays} days)`)}`));
+  result.push(header);
   result.push(...lines);
 
   return result;

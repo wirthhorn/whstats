@@ -62,7 +62,7 @@ export function isIgnoredEntry(entry: TimeEntry, ignoredTicketIds: ReadonlySet<n
   return issueId !== undefined && ignoredTicketIds.has(issueId);
 }
 
-export function calculateEffectiveBookedHours(
+export function calculateNetBookedHours(
   entries: TimeEntry[],
   ignoredTicketIds: ReadonlySet<number>,
 ): number {
@@ -71,6 +71,6 @@ export function calculateEffectiveBookedHours(
   }, 0);
 }
 
-export function calculateRawBookedHours(entries: TimeEntry[]): number {
+export function calculateGrossBookedHours(entries: TimeEntry[]): number {
   return entries.reduce((sum, entry) => sum + entry.hours, 0);
 }

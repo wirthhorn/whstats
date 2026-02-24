@@ -15,13 +15,14 @@ import {
   getYearToDateRange,
   formatHours,
   groupByDate,
-  calculateEffectiveBookedHours,
-  calculateRawBookedHours,
+  calculateNetBookedHours,
+  calculateGrossBookedHours,
 } from "./lib/utils.js";
 import { colors as c } from "./lib/colors.js";
 import { VERSION } from "./lib/version.js";
 import type { DayStats, SummaryData, StatsData } from "./lib/output/types.js";
 import { renderDayHeader, renderEntries, renderSummary } from "./lib/output/human.js";
+import { render as renderJson } from "./lib/output/json.js";
 
 function helpLine(flag: string, desc: string): string {
   return `    ${c.highlight(flag)} ${c.dim(desc)}`;
@@ -45,6 +46,7 @@ ${helpLine("whstats --month        ", "Show time statistics for the last 30 days
 ${helpLine("whstats --year-to-date ", "Show time statistics from Jan 1 to today (-ytd)")}
 ${helpLine("whstats --brief        ", "Show concise output (daily totals only)")}
 ${helpLine("whstats --no-summary   ", "Show without aggregate summary (-n)")}
+${helpLine("whstats --json         ", "Output results as JSON (-j)")}
 ${helpLine("whstats --setup        ", "Configure credentials (interactive)")}
 ${helpLine("whstats --config       ", "Show config file location")}
 ${helpLine("whstats --reset        ", "Delete saved configuration")}
@@ -127,19 +129,19 @@ function prepareStatsData(
 
   const dayStats: DayStats[] = sortedDates.map((date) => {
     const dayEntries = grouped.get(date) || [];
-    const rawBooked = calculateRawBookedHours(dayEntries);
-    const effectiveBooked = calculateEffectiveBookedHours(dayEntries, ignoredTicketIds);
+    const grossBooked = calculateGrossBookedHours(dayEntries);
+    const netBooked = calculateNetBookedHours(dayEntries, ignoredTicketIds);
     const clocked = clockedHours.get(date) || 0;
-    const excludedFromTarget =
+    const excludedFromNet =
       dayEntries.length > 0 && dayEntries.every((entry) => isIgnored(entry)) && clocked === 0;
 
     return {
       date,
       dayName: new Date(date).toLocaleDateString("en-US", { weekday: "short" }),
-      rawBooked,
-      effectiveBooked,
+      grossBooked,
+      netBooked,
       clocked,
-      excludedFromTarget,
+      excludedFromNet,
       entries: dayEntries,
     };
   });
@@ -148,11 +150,11 @@ function prepareStatsData(
   let totalBooked = 0;
   let totalClocked = 0;
   for (const stats of dayStats) {
-    totalBooked += stats.effectiveBooked;
+    totalBooked += stats.netBooked;
     totalClocked += stats.clocked;
   }
 
-  const eligibleDayStats = dayStats.filter((stats) => !stats.excludedFromTarget);
+  const eligibleDayStats = dayStats.filter((stats) => !stats.excludedFromNet);
   const workdays = eligibleDayStats.length;
   const currentDayStats = dayStats.find((stats) => stats.date === currentDate);
   const hasCurrentDateInRange = currentDayStats !== undefined;
@@ -172,7 +174,7 @@ function prepareStatsData(
     targetTotal += dayTarget;
   }
 
-  const bookedToday = currentDayStats?.effectiveBooked ?? 0;
+  const bookedToday = currentDayStats?.netBooked ?? 0;
   const bookedPastDays = totalBooked - bookedToday;
   const clockedToday = hasCurrentDateInRange ? currentDayStats?.clocked || 0 : 0;
   const clockedPastDays = totalClocked - clockedToday;
@@ -224,6 +226,9 @@ function displayResults(
   showAggregates = true,
   targetHoursPerDay = 8,
   ignoredTicketIds: ReadonlySet<number> = new Set<number>(),
+  json = false,
+  fromDate = "",
+  toDate = "",
 ): void {
   const statsData = prepareStatsData(
     entries,
@@ -233,6 +238,11 @@ function displayResults(
     targetHoursPerDay,
     ignoredTicketIds,
   );
+
+  if (json) {
+    console.log(renderJson(statsData, fromDate, toDate, brief, showAggregates));
+    return;
+  }
 
   console.log("");
 
@@ -257,9 +267,14 @@ function displayResults(
   }
 }
 
-async function runStats(days: number = 7, brief = false, showAggregates = true): Promise<void> {
+async function runStats(
+  days: number = 7,
+  brief = false,
+  showAggregates = true,
+  json = false,
+): Promise<void> {
   const { from, to } = getDateRange(days);
-  await runStatsForRange(from, to, brief, showAggregates);
+  await runStatsForRange(from, to, brief, showAggregates, json);
 }
 
 async function runStatsForRange(
@@ -267,13 +282,14 @@ async function runStatsForRange(
   to: string,
   brief = false,
   showAggregates = true,
+  json = false,
 ): Promise<void> {
   const config = getConfigOrExit();
   const ignoredTicketIds = new Set(config.ignoredRedmineTicketIds ?? []);
 
   try {
     const user = await fetchCurrentUser(config);
-    if (!brief) {
+    if (!brief && !json) {
       console.log(
         c.line(`\n${c.info(`Fetching time entries for ${user.firstname} ${user.lastname}...`)}`),
       );
@@ -294,6 +310,9 @@ async function runStatsForRange(
       showAggregates,
       targetHours,
       ignoredTicketIds,
+      json,
+      from,
+      to,
     );
   } catch (error) {
     if (error instanceof Error) {
@@ -324,13 +343,14 @@ const COMMAND_FLAGS = new Set([
   "-ytd",
 ]);
 
-const MODIFIER_FLAGS = new Set(["--brief", "-b", "--no-summary", "-n"]);
+const MODIFIER_FLAGS = new Set(["--brief", "-b", "--no-summary", "-n", "--json", "-j"]);
 
 async function main(): Promise<void> {
   // Filter out script name (e.g., "index.ts") when running with bun
   const args = process.argv.slice(2).filter((arg) => !arg.endsWith(".ts") && !arg.endsWith(".js"));
   const brief = args.includes("--brief") || args.includes("-b");
   const showAggregates = !args.includes("--no-summary") && !args.includes("-n");
+  const json = args.includes("--json") || args.includes("-j");
 
   // Check for unknown flags
   const unknownFlag = args.find(
@@ -375,23 +395,23 @@ async function main(): Promise<void> {
 
     case "-w":
     case "--week":
-      await runStats(7, brief, showAggregates);
+      await runStats(7, brief, showAggregates, json);
       break;
 
     case "-m":
     case "--month":
-      await runStats(30, brief, showAggregates);
+      await runStats(30, brief, showAggregates, json);
       break;
 
     case "-ytd":
     case "--year-to-date": {
       const { from, to } = getYearToDateRange();
-      await runStatsForRange(from, to, brief, showAggregates);
+      await runStatsForRange(from, to, brief, showAggregates, json);
       break;
     }
 
     case undefined:
-      await runStats(7, brief, showAggregates);
+      await runStats(7, brief, showAggregates, json);
       break;
 
     default:

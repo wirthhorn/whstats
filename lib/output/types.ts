@@ -3,10 +3,10 @@ import type { TimeEntry } from "../redmine.js";
 export interface DayStats {
   date: string;
   dayName: string;
-  rawBooked: number;
-  effectiveBooked: number;
+  grossBooked: number;
+  netBooked: number;
   clocked: number;
-  excludedFromTarget: boolean;
+  excludedFromNet: boolean;
   entries: TimeEntry[];
 }
 
