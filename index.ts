@@ -498,7 +498,7 @@ async function runStatsForRange(
 }
 
 async function main(): Promise<void> {
-  const args = Bun.argv.slice(2);
+  const args = process.argv.slice(2);
 
   let parsed;
   try {

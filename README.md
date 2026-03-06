@@ -158,11 +158,11 @@ Follow this checklist when publishing a new version:
 
 ### Pre-publish Checklist
 
-- [ ] Ensure tests pass, see [Testing](#testing)
-- [ ] Ensure all changes are committed and pushed to git
-- [ ] Review the `files` array in `package.json` to ensure only necessary files are published
-- [ ] Check that `dist/` directory is not committed to git (should be in `.gitignore`)
-- [ ] `CHANGELOG.md`, `--help` command output and `README.md` are up to date with new changes, if relevant
+- [x] Ensure tests pass, see [Testing](#testing)
+- [x] Ensure all changes are committed and pushed to git
+- [x] Review the `files` array in `package.json` to ensure only necessary files are published
+- [x] Check that `dist/` directory is not committed to git (should be in `.gitignore`)
+- [x] `CHANGELOG.md`, `--help` command output and `README.md` are up to date with new changes, if relevant
 
 ### Version Bump & Publish
 
