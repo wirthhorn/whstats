@@ -76,7 +76,6 @@ export function render(
   fromDate: string,
   toDate: string,
   brief = false,
-  showSummary = true,
 ): string {
   const output: JsonOutput = {
     meta: {
@@ -88,10 +87,7 @@ export function render(
       },
     },
     days: statsData.days.map((day) => transformDay(day, brief)),
-  };
-
-  if (showSummary) {
-    output.summary = {
+    summary: {
       workdays: statsData.summary.workdays,
       targetHoursPerDay: statsData.summary.targetHoursPerDay,
       targetTotal: statsData.summary.targetTotal,
@@ -103,8 +99,8 @@ export function render(
       percentages: statsData.summary.percentages,
       currentDate: statsData.summary.currentDate,
       isClockRunningToday: statsData.summary.isClockRunningToday,
-    };
-  }
+    },
+  };
 
   return JSON.stringify(output, null, 2);
 }

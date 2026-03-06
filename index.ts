@@ -26,8 +26,192 @@ import type { DayStats, SummaryData, StatsData } from "./lib/output/types.js";
 import { renderDayHeader, renderEntries, renderSummary } from "./lib/output/human.js";
 import { render as renderJson } from "./lib/output/json.js";
 
-function helpLine(flag: string, desc: string): string {
-  return `    ${c.highlight(flag)} ${c.dim(desc)}`;
+// ============================================================================
+// Unified Command & Modifier Registry
+// ============================================================================
+
+type CommandType = "action" | "range-days" | "range-fn";
+
+interface ModifierDef {
+  name: string;
+  short?: string;
+  description: string;
+}
+
+interface CommandDef {
+  name: string;
+  short?: string;
+  aliases?: string[];
+  description: string;
+  type: CommandType;
+  handler: ((ctx: RunContext) => void | Promise<void>) | number | (() => { from: string; to: string });
+  exampleArg: string;
+}
+
+interface RunContext {
+  brief: boolean;
+  json: boolean;
+}
+
+// Modifier flags that can combine with any range command
+const MODIFIERS: readonly ModifierDef[] = [
+  { name: "brief", short: "b", description: "Show concise output (daily totals only)" },
+  { name: "json", short: "j", description: "Output results as JSON" },
+];
+
+const COMMANDS: readonly CommandDef[] = [
+  {
+    name: "week",
+    short: "w",
+    description: "Show time statistics for the last 7 days",
+    type: "range-days",
+    handler: 7,
+    exampleArg: "--week",
+  },
+  {
+    name: "month",
+    short: "m",
+    description: "Show time statistics for the last 30 days",
+    type: "range-days",
+    handler: 30,
+    exampleArg: "--month",
+  },
+  {
+    name: "year",
+    short: "y",
+    description: "Show time statistics for the past 365 days",
+    type: "range-fn",
+    handler: getYearRange,
+    exampleArg: "--year",
+  },
+  {
+    name: "year-to-date",
+    short: "Y",
+    aliases: ["ytd"],
+    description: "Show time statistics from Jan 1 to today",
+    type: "range-fn",
+    handler: getYearToDateRange,
+    exampleArg: "--year-to-date",
+  },
+  {
+    name: "config",
+    aliases: ["setup"],
+    description: "Configure credentials (interactive)",
+    type: "action",
+    handler: async () => handleSetup(),
+    exampleArg: "--config",
+  },
+  {
+    name: "show-config",
+    description: "Show config file location and current settings",
+    type: "action",
+    handler: async () => showConfig(),
+    exampleArg: "--show-config",
+  },
+  {
+    name: "reset",
+    short: "r",
+    description: "Delete saved configuration",
+    type: "action",
+    handler: async () => handleReset(),
+    exampleArg: "--reset",
+  },
+  {
+    name: "help",
+    short: "h",
+    description: "Show this help message",
+    type: "action",
+    handler: async () => showHelp(),
+    exampleArg: "--help",
+  },
+  {
+    name: "version",
+    short: "v",
+    description: "Show version",
+    type: "action",
+    handler: async () => showVersion(),
+    exampleArg: "--version",
+  },
+];
+
+// Build parseArgs options from both commands and modifiers
+function buildParseArgsOptions(): Record<string, { type: "boolean"; short?: string }> {
+  const options: Record<string, { type: "boolean"; short?: string }> = {};
+  for (const cmd of COMMANDS) {
+    if (cmd.short) {
+      options[cmd.name] = { type: "boolean", short: cmd.short };
+    } else {
+      options[cmd.name] = { type: "boolean" };
+    }
+  }
+  for (const mod of MODIFIERS) {
+    if (mod.short) {
+      options[mod.name] = { type: "boolean", short: mod.short };
+    } else {
+      options[mod.name] = { type: "boolean" };
+    }
+  }
+  return options;
+}
+
+// Build help text from registry
+function buildHelpLines(): string {
+  const MAX_FLAG_WIDTH = 23;
+  const lines: string[] = [];
+
+  // Default command
+  lines.push(helpLine("whstats", "Show time statistics for the last 7 days (default)", MAX_FLAG_WIDTH));
+
+  // Commands from registry
+  for (const cmd of COMMANDS) {
+    const aliasText = cmd.aliases?.length ? ` (alias: ${cmd.aliases.join(", ")})` : "";
+    const shortText = cmd.short ? ` (-${cmd.short})` : "";
+    const fullDesc = `${cmd.description}${aliasText}${shortText}`;
+    lines.push(helpLine(`whstats ${cmd.exampleArg}`, fullDesc, MAX_FLAG_WIDTH));
+  }
+
+  // Modifier flags from registry
+  for (const mod of MODIFIERS) {
+    const shortText = mod.short ? ` (-${mod.short})` : "";
+    lines.push(helpLine(`whstats --${mod.name}`, `${mod.description}${shortText}`, MAX_FLAG_WIDTH));
+  }
+
+  return lines.join("\n");
+}
+
+// Find command definition by resolved name
+function findCommand(name: string): CommandDef | undefined {
+  return COMMANDS.find(
+    (cmd) => cmd.name === name || cmd.short === name || cmd.aliases?.includes(name),
+  );
+}
+
+// Resolve which command to run based on parsed values and positionals
+function resolveCommand(
+  values: Record<string, boolean | undefined>,
+  positionals: string[],
+): string | null {
+  for (const cmd of COMMANDS) {
+    if (values[cmd.name]) return cmd.name;
+  }
+  return positionals[0] ?? null;
+}
+
+// Build RunContext from parsed values
+function buildRunContext(values: Record<string, boolean | undefined>): RunContext {
+  return {
+    brief: values.brief ?? false,
+    json: values.json ?? false,
+  };
+}
+
+// ============================================================================
+// End of Unified Registry
+// ============================================================================
+
+function helpLine(flag: string, desc: string, width = 23): string {
+  const padded = flag.padEnd(width, " ");
+  return `    ${c.highlight(padded)} ${c.dim(desc)}`;
 }
 
 function showHelp(): void {
@@ -42,23 +226,10 @@ function showHelp(): void {
     B) Alternatively, install with ${c.highlight(`'npm install -g whstats'`)} and run ${c.highlight(`'whstats'`)}.
        Update with ${c.highlight(`'npm update -g whstats --latest'`)}.
 
-${helpLine("whstats                ", "Show time statistics for the last 7 days (default)")}
-${helpLine("whstats --week         ", "Show time statistics for the last 7 days (week)")}
-${helpLine("whstats --month        ", "Show time statistics for the last 30 days (month)")}
-${helpLine("whstats --year         ", "Show time statistics for the past 365 days (-y)")}
-${helpLine("whstats --year-to-date ", "Show time statistics from Jan 1 to today (-Y)")}
-${helpLine("whstats --brief        ", "Show concise output (daily totals only)")}
-${helpLine("whstats --no-summary   ", "Show without aggregate summary (-n)")}
-${helpLine("whstats --json         ", "Output results as JSON (-j)")}
-${helpLine("whstats --config       ", "Configure credentials (interactive, alias: --setup)")}
-${helpLine("whstats --setup        ", "Configure credentials (interactive, alias: --config)")}
-${helpLine("whstats --show-config  ", "Show config file location and current settings")}
-${helpLine("whstats --reset        ", "Delete saved configuration (-r)")}
-${helpLine("whstats --help         ", "Show this help message")}
-${helpLine("whstats --version      ", "Show version")}
+${buildHelpLines()}
 
   ${c.info("Configuration:")}
-    Run ${c.highlight("'whstats --setup'")} to configure your credentials interactively.
+    Run ${c.highlight("'whstats --config'")} to configure your credentials interactively.
     Credentials are stored in: ${c.dim("~/.config/whstats/config.json")}
 `),
   );
@@ -235,7 +406,6 @@ function displayResults(
   currentDate: string,
   isCurrentDayClockRunning: boolean,
   brief = false,
-  showAggregates = true,
   targetHoursPerDay = 8,
   ignoredTicketIds: ReadonlySet<number> = new Set<number>(),
   json = false,
@@ -252,7 +422,7 @@ function displayResults(
   );
 
   if (json) {
-    console.log(renderJson(statsData, fromDate, toDate, brief, showAggregates));
+    console.log(renderJson(statsData, fromDate, toDate, brief));
     return;
   }
 
@@ -271,37 +441,31 @@ function displayResults(
     }
   }
 
-  if (showAggregates) {
-    for (const line of renderSummary(statsData.summary)) {
-      console.log(line);
-    }
-    console.log("");
+  for (const line of renderSummary(statsData.summary)) {
+    console.log(line);
   }
+  console.log("");
 }
 
 async function runStats(
-  days: number = 7,
-  brief = false,
-  showAggregates = true,
-  json = false,
+  days: number,
+  ctx: RunContext,
 ): Promise<void> {
   const { from, to } = getDateRange(days);
-  await runStatsForRange(from, to, brief, showAggregates, json);
+  await runStatsForRange(from, to, ctx);
 }
 
 async function runStatsForRange(
   from: string,
   to: string,
-  brief = false,
-  showAggregates = true,
-  json = false,
+  ctx: RunContext,
 ): Promise<void> {
   const config = getConfigOrExit();
   const ignoredTicketIds = new Set(config.ignoredRedmineTicketIds ?? []);
 
   try {
     const user = await fetchCurrentUser(config);
-    if (!brief && !json) {
+    if (!ctx.brief && !ctx.json) {
       console.log(
         c.line(`\n${c.info(`Fetching time entries for ${user.firstname} ${user.lastname}...`)}`),
       );
@@ -318,11 +482,10 @@ async function runStatsForRange(
       clockedData.hoursByDate,
       clockedData.today,
       clockedData.isClockRunningToday,
-      brief,
-      showAggregates,
+      ctx.brief,
       targetHours,
       ignoredTicketIds,
-      json,
+      ctx.json,
       from,
       to,
     );
@@ -343,21 +506,7 @@ async function main(): Promise<void> {
   try {
     parsed = parseArgs({
       args,
-      options: {
-        help: { type: "boolean", short: "h" },
-        version: { type: "boolean", short: "v" },
-        setup: { type: "boolean" },
-        config: { type: "boolean" },
-        "show-config": { type: "boolean" },
-        reset: { type: "boolean", short: "r" },
-        week: { type: "boolean", short: "w" },
-        month: { type: "boolean", short: "m" },
-        "year-to-date": { type: "boolean", short: "Y" },
-        year: { type: "boolean", short: "y" },
-        brief: { type: "boolean", short: "b" },
-        "no-summary": { type: "boolean", short: "n" },
-        json: { type: "boolean", short: "j" },
-      },
+      options: buildParseArgsOptions(),
       strict: true,
       allowPositionals: true,
     });
@@ -372,87 +521,46 @@ async function main(): Promise<void> {
   }
 
   const { values, positionals } = parsed;
-  const brief = values.brief ?? false;
-  const showAggregates = !(values["no-summary"] ?? false);
-  const json = values.json ?? false;
+  const ctx = buildRunContext(values);
 
-  // Determine which command to run
-  // Priority: explicit command flags > non-flag positional > default (7 days)
-  const commandFlag =
-    values.help ? "help"
-    : values.version ? "version"
-    : values["show-config"] ? "show-config"
-    : values.setup ? "setup"
-    : values.config ? "config"
-    : values.reset ? "reset"
-    : values.week ? "week"
-    : values.month ? "month"
-    : values.year ? "year"
-    : values["year-to-date"] ? "year-to-date"
-    : null;
+  // Resolve and execute command
+  const commandName = resolveCommand(values, positionals);
 
-  const nonFlagArg = positionals[0];
-  const command = commandFlag ?? nonFlagArg;
+  // Default case: no command specified
+  if (commandName === null) {
+    await runStats(7, ctx);
+    return;
+  }
 
-  switch (command) {
-    case "help":
-    case "h":
-      showHelp();
-      break;
+  // Find command definition
+  const commandDef = findCommand(commandName);
 
-    case "version":
-    case "v":
-      showVersion();
-      break;
+  if (!commandDef) {
+    console.error(c.line(`\n  ${c.warning(`Unknown command: ${commandName}`)}`));
+    console.error(c.line(`  ${c.dim("Run 'whstats --help' for usage.")}\n`));
+    process.exit(1);
+  }
 
-    case "setup":
-    case "config":
-      await handleSetup();
-      break;
-
-    case "show-config":
-      showConfig();
-      break;
-
-    case "reset":
-    case "r":
-      handleReset();
-      break;
-
-    case "week":
-    case "w":
-      await runStats(7, brief, showAggregates, json);
-      break;
-
-    case "month":
-    case "m":
-      await runStats(30, brief, showAggregates, json);
-      break;
-
-    case "year":
-    case "y": {
-      const { from, to } = getYearRange();
-      await runStatsForRange(from, to, brief, showAggregates, json);
+  // Execute based on command type
+  switch (commandDef.type) {
+    case "action": {
+      const handler = commandDef.handler as (ctx: RunContext) => void | Promise<void>;
+      await handler(ctx);
       break;
     }
 
-    case "year-to-date":
-    case "Y":
-    case "ytd": {
-      const { from, to } = getYearToDateRange();
-      await runStatsForRange(from, to, brief, showAggregates, json);
+    case "range-days": {
+      const days = commandDef.handler as number;
+      await runStats(days, ctx);
       break;
     }
 
-    case undefined:
-    case null:
-      await runStats(7, brief, showAggregates, json);
+    case "range-fn": {
+      const rangeFn = commandDef.handler as () => { from: string; to: string };
+      const { from, to } = rangeFn();
+      await runStatsForRange(from, to, ctx);
       break;
-
-    default:
-      console.error(c.line(`\n  ${c.warning(`Unknown command: ${command}`)}`));
-      console.error(c.line(`  ${c.dim("Run 'whstats --help' for usage.")}\n`));
-      process.exit(1);
+    }
   }
 }
 
