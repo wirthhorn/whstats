@@ -87,7 +87,6 @@ const COMMANDS: readonly CommandDef[] = [
   {
     name: "year-to-date",
     short: "Y",
-    aliases: ["ytd"],
     description: "Show time statistics from Jan 1 to today",
     type: "range-fn",
     handler: getYearToDateRange,
@@ -110,7 +109,6 @@ const COMMANDS: readonly CommandDef[] = [
   },
   {
     name: "reset",
-    short: "r",
     description: "Delete saved configuration",
     type: "action",
     handler: async () => handleReset(),

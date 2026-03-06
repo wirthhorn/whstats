@@ -54,23 +54,28 @@ npm update -g whstats
 ## Usage
 
 ```bash
-# Show time statistics
+# Show time statistics for the last 7 days (default)
 whstats
 
-# Show year-to-date statistics
-whstats --year-to-date
+# Range commands
+whstats --week          # or -w, show last 7 days (same as default)
+whstats --month         # or -m, show last 30 days
+whstats --year          # or -y, show past 365 days
+whstats --year-to-date  # or -Y, show from Jan 1 to today
 
-# First time setup (interactive)
-whstats --config    # or --setup
+# Output modifiers (combine with range commands)
+whstats --brief         # or -b, concise output (daily totals only)
+whstats --json          # or -j, output as JSON
+whstats -mb             # combined example for --month --brief
 
-# Show config file location and current settings
-whstats --show-config
+# Configuration commands
+whstats --config        # or --setup, first time setup (interactive)
+whstats --show-config   # show config file location and current settings
+whstats --reset         # delete configuration
 
-# Reset configuration
-whstats --reset
-
-# Show help
-whstats --help
+# Help
+whstats --help          # or -h, show help
+whstats --version       # or -v, show version
 ```
 
 ## Configuration
@@ -140,8 +145,10 @@ bun run index.ts --help
 
 - [ ] Typecheck with `bun run tsc`
 - [ ] Run `bun run index.ts` and verify output is correct
-- [ ] Test `--help` and `--version` flags
-- [ ] Test flag combinations, e.g., `bun run index.ts --month --brief`
+- [ ] Test `--help` and `--version` flags (also `-h`, `-v`)
+- [ ] Test range commands: `--week` (`-w`), `--month` (`-m`), `--year` (`-y`), `--year-to-date` (`-Y`)
+- [ ] Test modifiers: `--brief` (`-b`), `--json` (`-j`)
+- [ ] Test flag combinations, e.g., `bun run index.ts -Yb` or `--month --json`
 - [ ] Unknown flags produce helpful error messages
 - [ ] Built distribution (`bun run build && node dist/index.js --version`) runs correctly
 
