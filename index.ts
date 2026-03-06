@@ -14,6 +14,7 @@ import { fetchClockedHours } from "./lib/mssql.js";
 import {
   getDateRange,
   getYearToDateRange,
+  getYearRange,
   formatHours,
   groupByDate,
   calculateNetBookedHours,
@@ -44,7 +45,8 @@ function showHelp(): void {
 ${helpLine("whstats                ", "Show time statistics for the last 7 days (default)")}
 ${helpLine("whstats --week         ", "Show time statistics for the last 7 days (week)")}
 ${helpLine("whstats --month        ", "Show time statistics for the last 30 days (month)")}
-${helpLine("whstats --year-to-date ", "Show time statistics from Jan 1 to today (-ytd)")}
+${helpLine("whstats --year         ", "Show time statistics for the past 365 days (-y)")}
+${helpLine("whstats --year-to-date ", "Show time statistics from Jan 1 to today (-Y)")}
 ${helpLine("whstats --brief        ", "Show concise output (daily totals only)")}
 ${helpLine("whstats --no-summary   ", "Show without aggregate summary (-n)")}
 ${helpLine("whstats --json         ", "Output results as JSON (-j)")}
@@ -326,9 +328,7 @@ async function runStatsForRange(
 }
 
 async function main(): Promise<void> {
-  // Handle special case: -ytd is equivalent to --year-to-date
-  const rawArgs = Bun.argv.slice(2);
-  const args = rawArgs.map((arg) => (arg === "-ytd" ? "-y" : arg));
+  const args = Bun.argv.slice(2);
 
   let parsed;
   try {
@@ -342,7 +342,8 @@ async function main(): Promise<void> {
         reset: { type: "boolean", short: "r" },
         week: { type: "boolean", short: "w" },
         month: { type: "boolean", short: "m" },
-        "year-to-date": { type: "boolean", short: "y" },
+        "year-to-date": { type: "boolean", short: "Y" },
+        year: { type: "boolean", short: "y" },
         brief: { type: "boolean", short: "b" },
         "no-summary": { type: "boolean", short: "n" },
         json: { type: "boolean", short: "j" },
@@ -375,6 +376,7 @@ async function main(): Promise<void> {
     : values.reset ? "reset"
     : values.week ? "week"
     : values.month ? "month"
+    : values.year ? "year"
     : values["year-to-date"] ? "year-to-date"
     : null;
 
@@ -417,8 +419,15 @@ async function main(): Promise<void> {
       await runStats(30, brief, showAggregates, json);
       break;
 
+    case "year":
+    case "y": {
+      const { from, to } = getYearRange();
+      await runStatsForRange(from, to, brief, showAggregates, json);
+      break;
+    }
+
     case "year-to-date":
-    case "y":
+    case "Y":
     case "ytd": {
       const { from, to } = getYearToDateRange();
       await runStatsForRange(from, to, brief, showAggregates, json);

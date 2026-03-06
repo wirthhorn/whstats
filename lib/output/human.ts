@@ -123,7 +123,7 @@ export function renderSummary(data: SummaryData): string[] {
   const { lines, maxWidth } = buildSummaryTable(data);
 
   const header = c.line(
-    `Summary ${c.dim(`(past ${data.workdays} day${data.workdays !== 1 ? "s" : ""})`)}`,
+    `Summary ${c.dim(`(past ${data.workdays} workday${data.workdays !== 1 ? "s" : ""})`)}`,
   );
   const separatorWidth = Math.max(maxWidth, stripAnsi(header).length);
   const separator = c.line("─".repeat(separatorWidth));

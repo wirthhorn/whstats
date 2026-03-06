@@ -20,6 +20,13 @@ export function getYearToDateRange(): { from: string; to: string } {
   return { from: formatDate(fromDate), to: formatDate(today) };
 }
 
+export function getYearRange(): { from: string; to: string } {
+  const today = new Date();
+  const fromDate = new Date(today);
+  fromDate.setDate(today.getDate() - 365);
+  return { from: formatDate(fromDate), to: formatDate(today) };
+}
+
 export function formatHours(hours: number): string {
   if (hours % 1 === 0) {
     return `${hours}h`;
