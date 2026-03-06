@@ -155,7 +155,7 @@ Follow this checklist when publishing a new version:
 - [ ] Ensure all changes are committed and pushed to git
 - [ ] Review the `files` array in `package.json` to ensure only necessary files are published
 - [ ] Check that `dist/` directory is not committed to git (should be in `.gitignore`)
-- [ ] Update `CHANGELOG.md` with new changes
+- [ ] `CHANGELOG.md`, `--help` command output and `README.md` are up to date with new changes, if relevant
 
 ### Version Bump & Publish
 
